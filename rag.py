@@ -57,7 +57,7 @@ def _format_pokemon_entry(row):
 def chunk_by_entry():
     """Chunk the Pokédex by full Pokémon record using CSV parsing."""
     chunks = []
-    data_path = Path(__file__).with_name("pokedex.txt")
+    data_path = Path(__file__).parent / "pokedex.txt"
     with data_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -78,23 +78,23 @@ def name_from_chunk(chunk):
 
 def build_name_matcher(chunks):
     names = [name_from_chunk(chunk) for chunk in chunks]
+    known_terms = {
+        part.casefold()
+        for chunk in chunks
+        for part in _WORD_PATTERN.findall(chunk)
+    }
     vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5))
     name_embeddings = vectorizer.fit_transform(names)
-    return names, vectorizer, name_embeddings
+    return names, known_terms, vectorizer, name_embeddings
 
 
-def correct_name_typos(query, names, vectorizer, name_embeddings):
-    known_name_parts = {
-        part.casefold()
-        for name in names
-        for part in _WORD_PATTERN.findall(name)
-    }
+def correct_name_typos(query, names, known_terms, vectorizer, name_embeddings):
     matches = list(_WORD_PATTERN.finditer(query))
     corrected_query = query
 
     for match in reversed(matches):
         token = match.group()
-        if len(token) < 4 or token.casefold() in known_name_parts:
+        if len(token) < 4 or token.casefold() in known_terms:
             continue
 
         token_embedding = vectorizer.transform([token])
@@ -115,6 +115,7 @@ def retrieve_query(
     vectorizer,
     chunk_embeddings,
     names,
+    known_terms,
     name_vectorizer,
     name_embeddings,
     top_k=5,
@@ -123,7 +124,7 @@ def retrieve_query(
     retrieval_query = query
     if correct_typos:
         retrieval_query = correct_name_typos(
-            query, names, name_vectorizer, name_embeddings
+            query, names, known_terms, name_vectorizer, name_embeddings
         )
     query_embedding = embed_query(retrieval_query, vectorizer)
     top_indices, similarities = retrieve_similar_chunks(

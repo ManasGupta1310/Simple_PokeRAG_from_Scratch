@@ -4,7 +4,7 @@ import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from groq import Groq
 from rag import (
     build_name_matcher,
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 try:
-    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.10"))
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.1299"))
 except ValueError as exc:
     raise RuntimeError("SIMILARITY_THRESHOLD must be a number between 0 and 1.") from exc
 
@@ -32,7 +32,7 @@ app = FastAPI()
 
 # Load the chunks and build the vectorizer and embeddings for the RAG system
 chunks = chunk_by_entry()
-pokemon_names, name_vectorizer, name_embeddings = build_name_matcher(chunks)
+pokemon_names, known_terms, name_vectorizer, name_embeddings = build_name_matcher(chunks)
 vectorizer = build_vectorizer()
 chunk_embeddings = embed_chunks(chunks, vectorizer)
 
@@ -46,6 +46,11 @@ client = Groq(api_key=api_key)
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
 
+    @field_validator("query", mode="before")
+    @classmethod
+    def strip_query(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 # Define the root endpoint for the FastAPI application
 @app.get("/")
 def read_root():
@@ -55,17 +60,12 @@ def read_root():
 @app.post("/search")
 def search(payload: SearchRequest):
     user_query = payload.query
-    if not user_query.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="A non-empty search query is required.",
-        )
 
-    # query is the question given by the user
     system_prompt = (
-        "You are a helpful assistant that provides accurate and concise answers based on the retrieved documents. "
-        "If the query is not related to the retrieved documents, politely cite that the information was not available "
-        "on the documents and hence you cant help"
+        "You are a helpful assistant that answers accurately and concisely using the supplied Pokédex entries. "
+        "If the entries do not contain the specific fact requested, say that the data does not provide it, "
+        "even if a Pokémon mentioned in the question appears in the entries. Do not infer missing facts or "
+        "rely on outside knowledge."
     )
 
     _, top_indices, similarities = retrieve_query(
@@ -73,6 +73,7 @@ def search(payload: SearchRequest):
         vectorizer,
         chunk_embeddings,
         pokemon_names,
+        known_terms,
         name_vectorizer,
         name_embeddings,
     )

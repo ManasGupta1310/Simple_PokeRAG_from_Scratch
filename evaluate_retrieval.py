@@ -13,10 +13,37 @@ from rag import (
 
 parser = argparse.ArgumentParser(description="Evaluate retrieval without calling an LLM.")
 parser.add_argument(
-    "--correct-name-typos",
-    action="store_true",
-    help="Apply char n-gram matching to likely misspelled Pokémon names before retrieval.",
+    "--no-typo-correction",
+    dest="correct_typos",
+    action="store_false",
+    default=True,
+    help="Disable character n-gram Pokémon-name typo correction.",
 )
+
+
+def _select_threshold(positive_scores, negative_scores):
+    unique_scores = sorted(set(positive_scores + negative_scores))
+    candidates = [0.0, 1.0]
+    candidates.extend(
+        (left + right) / 2
+        for left, right in zip(unique_scores, unique_scores[1:])
+    )
+
+    best_threshold = 0.0
+    best_balanced_accuracy = -1.0
+    for threshold in candidates:
+        true_positive_rate = sum(
+            score >= threshold and score > 0 for score in positive_scores
+        ) / len(positive_scores)
+        true_negative_rate = sum(
+            score < threshold or score == 0 for score in negative_scores
+        ) / len(negative_scores)
+        balanced_accuracy = (true_positive_rate + true_negative_rate) / 2
+        if (balanced_accuracy, threshold) > (best_balanced_accuracy, best_threshold):
+            best_threshold = threshold
+            best_balanced_accuracy = balanced_accuracy
+
+    return best_threshold, best_balanced_accuracy
 
 
 def main():
@@ -26,88 +53,139 @@ def main():
         eval_set = json.load(f)
 
     chunks = chunk_by_entry()
-    pokemon_names, name_vectorizer, name_embeddings = build_name_matcher(chunks)
+    names, known_terms, name_vectorizer, name_embeddings = build_name_matcher(chunks)
     vectorizer = build_vectorizer()
     chunk_embeddings = embed_chunks(chunks, vectorizer)
-    hit_counts = {k: 0 for k in (1, 3, 5)}
-    in_scope_scores = []
 
+    in_scope_results = []
+    hit_counts = {k: 0 for k in (1, 3, 5)}
     for case in eval_set["in_scope"]:
         query = case["query"]
-        expected_names = case["expected_names"]
         retrieval_query, top_indices, scores = retrieve_query(
             query,
             vectorizer,
             chunk_embeddings,
-            pokemon_names,
+            names,
+            known_terms,
             name_vectorizer,
             name_embeddings,
             top_k=max(hit_counts),
-            correct_typos=args.correct_name_typos,
+            correct_typos=args.correct_typos,
         )
-        retrieved_chunks = [chunks[index] for index in top_indices]
-        retrieved_names = [name_from_chunk(chunk) for chunk in retrieved_chunks]
-        top_name = retrieved_names[0] if retrieved_names else None
-        top_expected_name = top_name if top_name in expected_names else None
-        in_scope_scores.append(float(scores[0]) if len(scores) else 0.0)
-
+        retrieved_names = [name_from_chunk(chunks[index]) for index in top_indices]
+        expected_names = case["expected_names"]
         for k in hit_counts:
             if any(name in expected_names for name in retrieved_names[:k]):
                 hit_counts[k] += 1
 
+        top_score = float(scores[0]) if len(scores) else 0.0
+        in_scope_results.append((case, top_score))
+        top_name = retrieved_names[0] if retrieved_names else "no named entry"
+        corrected_query = (
+            f"retrieval_query={retrieval_query!r} "
+            if retrieval_query != query
+            else ""
+        )
         print(
-            f"IN  top1={float(scores[0]) if len(scores) else 0.0:.4f} "
-            f"hit@1={'yes' if top_expected_name else 'no'} "
-            f"query={query!r} "
-            f"{f'retrieval_query={retrieval_query!r} ' if retrieval_query != query else ''}"
-            f"retrieved={top_name or 'no named entry'}"
+            f"IN  split={case['split']} top1={top_score:.4f} "
+            f"hit@1={'yes' if top_name in expected_names else 'no'} "
+            f"query={query!r} {corrected_query}retrieved={top_name}"
         )
 
-    category_scores = {}
-    for category in ("off_topic", "in_domain_unanswerable"):
-        scores_for_category = []
-        label = "OFF" if category == "off_topic" else "IN-DOMAIN-UNANSWERABLE"
-        for query in eval_set[category]:
-            retrieval_query, _, scores = retrieve_query(
-                query,
-                vectorizer,
-                chunk_embeddings,
-                pokemon_names,
-                name_vectorizer,
-                name_embeddings,
-                top_k=1,
-                correct_typos=args.correct_name_typos,
-            )
-            top_score = float(scores[0]) if len(scores) else 0.0
-            scores_for_category.append(top_score)
-            print(
-                f"{label} top1={top_score:.4f} query={query!r} "
-                f"{f'retrieval_query={retrieval_query!r}' if retrieval_query != query else ''}"
-            )
-        category_scores[category] = scores_for_category
+    off_topic_results = []
+    for case in eval_set["off_topic"]:
+        query = case["query"]
+        retrieval_query, _, scores = retrieve_query(
+            query,
+            vectorizer,
+            chunk_embeddings,
+            names,
+            known_terms,
+            name_vectorizer,
+            name_embeddings,
+            top_k=1,
+            correct_typos=args.correct_typos,
+        )
+        score = float(scores[0]) if len(scores) else 0.0
+        off_topic_results.append((case, score))
+        corrected_query = (
+            f"retrieval_query={retrieval_query!r} "
+            if retrieval_query != query
+            else ""
+        )
+        print(
+            f"OFF split={case['split']} top1={score:.4f} "
+            f"query={query!r} {corrected_query}"
+        )
 
-    total = len(eval_set["in_scope"])
-    print("\nIn-scope retrieval:")
+    unanswerable_scores = []
+    for query in eval_set["in_domain_unanswerable"]:
+        _, _, scores = retrieve_query(
+            query,
+            vectorizer,
+            chunk_embeddings,
+            names,
+            known_terms,
+            name_vectorizer,
+            name_embeddings,
+            top_k=1,
+            correct_typos=args.correct_typos,
+        )
+        score = float(scores[0]) if len(scores) else 0.0
+        unanswerable_scores.append(score)
+        print(f"IN-DOMAIN-UNANSWERABLE top1={score:.4f} query={query!r}")
+
+    calibration_positive_scores = [
+        score for case, score in in_scope_results if case["split"] == "calibration"
+    ]
+    calibration_negative_scores = [
+        score for case, score in off_topic_results if case["split"] == "calibration"
+    ]
+    threshold, calibration_balanced_accuracy = _select_threshold(
+        calibration_positive_scores, calibration_negative_scores
+    )
+
+    holdout_positive_scores = [
+        score for case, score in in_scope_results if case["split"] == "holdout"
+    ]
+    holdout_negative_scores = [
+        score for case, score in off_topic_results if case["split"] == "holdout"
+    ]
+    holdout_accepted = sum(
+        score >= threshold and score > 0 for score in holdout_positive_scores
+    )
+    holdout_rejected = sum(
+        score < threshold or score == 0 for score in holdout_negative_scores
+    )
+    holdout_gap = (
+        min(holdout_positive_scores) - max(holdout_negative_scores)
+        if holdout_positive_scores and holdout_negative_scores
+        else None
+    )
+
+    total = len(in_scope_results)
+    print(f"\nName typo correction: {'on' if args.correct_typos else 'off'}")
+    print("In-scope retrieval:")
     for k, hits in hit_counts.items():
         print(f"  hit@{k}: {hits}/{total} ({hits / total:.1%})")
+    print("\nCalibration (threshold selected using these rows only):")
+    print(f"  selected threshold: {threshold:.4f}")
+    print(f"  balanced accuracy:  {calibration_balanced_accuracy:.1%}")
+    print("\nHeld-out threshold check:")
+    print(f"  in-scope accepted: {holdout_accepted}/{len(holdout_positive_scores)}")
+    print(f"  off-topic rejected: {holdout_rejected}/{len(holdout_negative_scores)}")
+    if holdout_gap is not None:
+        print(f"  score gap: {holdout_gap:.4f}")
 
-    off_topic_scores = category_scores["off_topic"]
-    if off_topic_scores:
-        mean_off_topic_score = sum(off_topic_scores) / len(off_topic_scores)
-        max_off_topic_score = max(off_topic_scores)
-        min_in_score = min(in_scope_scores) if in_scope_scores else 0.0
+    if off_topic_results:
+        off_topic_scores = [score for _, score in off_topic_results]
         print("\nOff-topic score summary:")
-        print(f"  mean top-1 score: {mean_off_topic_score:.4f}")
-        print(f"  max top-1 score:  {max_off_topic_score:.4f}")
-        print(
-            "  conservative score gap (min in-scope top-1 - max off-topic top-1): "
-            f"{min_in_score - max_off_topic_score:.4f}"
-        )
-    in_domain_scores = category_scores["in_domain_unanswerable"]
-    if in_domain_scores:
+        print(f"  mean top-1 score: {sum(off_topic_scores) / len(off_topic_scores):.4f}")
+        print(f"  max top-1 score:  {max(off_topic_scores):.4f}")
+    if unanswerable_scores:
         print("\nIn-domain unanswerable score summary:")
-        print(f"  mean top-1 score: {sum(in_domain_scores) / len(in_domain_scores):.4f}")
-        print(f"  max top-1 score:  {max(in_domain_scores):.4f}")
+        print(f"  mean top-1 score: {sum(unanswerable_scores) / len(unanswerable_scores):.4f}")
+        print(f"  max top-1 score:  {max(unanswerable_scores):.4f}")
 
 
 if __name__ == "__main__":

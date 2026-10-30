@@ -2,52 +2,105 @@
   "in_scope": [
     {
       "query": "What type is Charizard?",
-      "expected_names": ["Charizard"]
+      "expected_names": ["Charizard"],
+      "split": "calibration"
     },
     {
       "query": "What are Pikachu's base stats?",
-      "expected_names": ["Pikachu"]
+      "expected_names": ["Pikachu"],
+      "split": "calibration"
     },
     {
       "query": "What type is Bulbasaur?",
-      "expected_names": ["Bulbasaur"]
+      "expected_names": ["Bulbasaur"],
+      "split": "calibration"
     },
     {
       "query": "How fast is Alakazam?",
-      "expected_names": ["Alakazam"]
+      "expected_names": ["Alakazam"],
+      "split": "calibration"
     },
     {
       "query": "What is Gengar's entry number and type?",
-      "expected_names": ["Gengar"]
+      "expected_names": ["Gengar"],
+      "split": "calibration"
     },
     {
       "query": "Which types does Gyarados have?",
-      "expected_names": ["Gyarados"]
+      "expected_names": ["Gyarados"],
+      "split": "calibration"
     },
     {
       "query": "What is Eevee's HP?",
-      "expected_names": ["Eevee"]
+      "expected_names": ["Eevee"],
+      "split": "holdout"
     },
     {
       "query": "What is Dragonite's attack?",
-      "expected_names": ["Dragonite"]
+      "expected_names": ["Dragonite"],
+      "split": "holdout"
     },
     {
       "query": "What type is Charzard?",
-      "expected_names": ["Charizard"]
+      "expected_names": ["Charizard"],
+      "split": "calibration"
     },
     {
       "query": "What is the type of Gengaar?",
-      "expected_names": ["Gengar"]
+      "expected_names": ["Gengar"],
+      "split": "holdout"
+    },
+    {
+      "query": "Which Pokémon are Fire type?",
+      "expected_names": ["Ponyta", "Torchic", "Growlithe", "Charizard"],
+      "split": "calibration"
+    },
+    {
+      "query": "Which Pokémon are Electric type?",
+      "expected_names": ["Flaaffy", "Voltorb", "Plusle", "Minun", "Electrode", "Pikachu"],
+      "split": "calibration"
+    },
+    {
+      "query": "Which Pokémon has Speed 200?",
+      "expected_names": ["Regieleki"],
+      "split": "calibration"
+    },
+    {
+      "query": "Which Pokémon has HP 255?",
+      "expected_names": ["Blissey"],
+      "split": "holdout"
+    },
+    {
+      "query": "Who has the highest HP?",
+      "expected_names": ["Blissey"],
+      "split": "holdout"
     }
   ],
   "off_topic": [
-    "What is the capital of France?",
-    "What is the weather today?",
-    "What is the population of Tokyo?",
-    "How do I attack a castle?",
-    "What type of coffee is best?",
-    "What is the best way to attack a problem?"
+    {
+      "query": "What is the capital of France?",
+      "split": "calibration"
+    },
+    {
+      "query": "What is the weather today?",
+      "split": "calibration"
+    },
+    {
+      "query": "What is the population of Tokyo?",
+      "split": "calibration"
+    },
+    {
+      "query": "How do I attack a castle?",
+      "split": "calibration"
+    },
+    {
+      "query": "What type of coffee is best?",
+      "split": "holdout"
+    },
+    {
+      "query": "What is the best way to attack a problem?",
+      "split": "holdout"
+    }
   ],
   "in_domain_unanswerable": [
     "Who is Pikachu's trainer?",
