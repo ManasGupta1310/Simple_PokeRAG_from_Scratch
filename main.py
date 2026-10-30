@@ -38,8 +38,8 @@ def search(payload: Optional[SearchRequest] = None, query: Optional[str] = None)
     # query is the question given by the user
     system_prompt = (
         "You are a helpful assistant that provides accurate and concise answers based on the retrieved documents. "
-        "Always cite the source of the information when possible. If the query is not related to the "
-        "retrieved documents, politely cite that the information was not available on the documents and hence you cant help"
+        "If the query is not related to the retrieved documents, politely cite that the information was not available "
+        "on the documents and hence you cant help"
     )
 
     load_dotenv()
@@ -49,7 +49,7 @@ def search(payload: Optional[SearchRequest] = None, query: Optional[str] = None)
     retrieved_chunks = [chunks[i] for i in top_indices]
     context = "\n\n---\n\n".join(retrieved_chunks)
 
-    model_candidates = [os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")]
+    model_candidates = [os.getenv("MODEL", "openai/gpt-oss-120b")]
     last_error = None
 
     for model_name in dict.fromkeys(model_candidates):

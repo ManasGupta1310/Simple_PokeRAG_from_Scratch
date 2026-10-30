@@ -14,20 +14,31 @@
 # For generation, we use a language model to produce a response based on the augmented input, combining the original query 
 # and the retrieved chunks as the context for the prompt to the language model.
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 def fixed_size_chunking():
-    chunk_size = 1000  # Define the chunk size here
+    """Chunk the Pokédex by Pokémon entry instead of slicing raw text arbitrarily.
+
+    The source file is a CSV with one Pokémon per row, so splitting by entry preserves
+    the full record for each Pokémon and keeps retrieval context grounded in a whole
+    entity rather than cutting through it mid-entry.
+    """
     with open("pokedex.txt", "r", encoding="utf-8") as f:
-        document = f.read()
+        rows = [line.strip() for line in f if line.strip()]
+
+    if not rows:
+        return []
+
+    header = rows[0]
     chunks = []
-    # We split the document in chunks of chunk_size with overlap to ensure context continuity
-    overlap = chunk_size // 2
-    for i in range(0, len(document), chunk_size - overlap):
-        chunks.append(document[i:i + chunk_size])
+    for row in rows[1:]:
+        chunks.append(f"{header}\n{row}")
+
     return chunks
 
 
 def build_vectorizer():
-    from sklearn.feature_extraction.text import TfidfVectorizer
     return TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
 
 
@@ -42,7 +53,6 @@ def embed_query(query, vectorizer):
 
 
 def retrieve_similar_chunks(query_embedding, chunk_embeddings, top_k=5):
-    from sklearn.metrics.pairwise import cosine_similarity
     similarities = cosine_similarity(query_embedding, chunk_embeddings)[0]
     top_indices = similarities.argsort()[-top_k:][::-1]
     return top_indices, similarities[top_indices]
