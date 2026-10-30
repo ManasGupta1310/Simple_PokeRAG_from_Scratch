@@ -1,10 +1,21 @@
 from typing import Optional
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from rag import (
+        build_vectorizer,
+        embed_chunks,
+        embed_query,
+        fixed_size_chunking,
+        retrieve_similar_chunks,
+    )
+from groq import Groq
+from dotenv import load_dotenv
+import os
 
 app = FastAPI()
-
+chunks = fixed_size_chunking()
+vectorizer = build_vectorizer()
+chunk_embeddings = embed_chunks(chunks, vectorizer)
 
 class SearchRequest(BaseModel):
     query: str
@@ -31,32 +42,14 @@ def search(payload: Optional[SearchRequest] = None, query: Optional[str] = None)
         "retrieved documents, politely cite that the information was not available on the documents and hence you cant help"
     )
 
-    from rag import (
-        build_vectorizer,
-        embed_chunks,
-        embed_query,
-        fixed_size_chunking,
-        retrieve_similar_chunks,
-    )
-    from groq import Groq
-    from dotenv import load_dotenv
-    import os
-
     load_dotenv()
     client = Groq(api_key=os.getenv("API_KEY"))
-
-    chunks = fixed_size_chunking()
-    vectorizer = build_vectorizer()
-    chunk_embeddings = embed_chunks(chunks, vectorizer)
     query_embedding = embed_query(user_query, vectorizer)
     top_indices, _ = retrieve_similar_chunks(query_embedding, chunk_embeddings)
     retrieved_chunks = [chunks[i] for i in top_indices]
     context = "\n\n---\n\n".join(retrieved_chunks)
 
-    model_candidates = [
-        os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
-        "openai/gpt-oss-120b",
-    ]
+    model_candidates = [os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")]
     last_error = None
 
     for model_name in dict.fromkeys(model_candidates):
@@ -75,7 +68,7 @@ def search(payload: Optional[SearchRequest] = None, query: Optional[str] = None)
                 stream=False,
             )
             return {"answer": response.choices[0].message.content}
-        except Exception as exc:  # pragma: no cover - depends on external API availability
+        except Exception as exc:
             last_error = exc
 
     raise HTTPException(
