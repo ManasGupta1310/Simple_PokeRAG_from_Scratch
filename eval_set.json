@@ -1,0 +1,52 @@
+{
+  "in_scope": [
+    {
+      "query": "What type is Charizard?",
+      "expected_names": ["Charizard"]
+    },
+    {
+      "query": "What are Pikachu's base stats?",
+      "expected_names": ["Pikachu"]
+    },
+    {
+      "query": "What type is Bulbasaur?",
+      "expected_names": ["Bulbasaur"]
+    },
+    {
+      "query": "How fast is Alakazam?",
+      "expected_names": ["Alakazam"]
+    },
+    {
+      "query": "What is Gengar's entry number and type?",
+      "expected_names": ["Gengar"]
+    },
+    {
+      "query": "Which types does Gyarados have?",
+      "expected_names": ["Gyarados"]
+    },
+    {
+      "query": "What is Eevee's HP?",
+      "expected_names": ["Eevee"]
+    },
+    {
+      "query": "What is Dragonite's attack?",
+      "expected_names": ["Dragonite"]
+    },
+    {
+      "query": "What type is Charzard?",
+      "expected_names": ["Charizard"]
+    },
+    {
+      "query": "What is the type of Gengaar?",
+      "expected_names": ["Gengar"]
+    }
+  ],
+  "out_of_scope": [
+    "What is the capital of France?",
+    "What is the weather today?",
+    "Who is Pikachu's trainer?",
+    "What moves does Pikachu learn?",
+    "What is the population of Tokyo?",
+    "Who will win the 2026 Pokémon championship?"
+  ]
+}

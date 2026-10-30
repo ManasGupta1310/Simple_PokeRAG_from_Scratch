@@ -15,9 +15,14 @@
 # and the retrieved chunks as the context for the prompt to the language model.
 
 import csv
+import re
+from pathlib import Path
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+NAME_TYPO_MATCH_THRESHOLD = 0.6
+_WORD_PATTERN = re.compile(r"[^\W_]+(?:[♀♂])?", re.UNICODE)
 
 
 def _format_pokemon_entry(row):
@@ -52,13 +57,57 @@ def _format_pokemon_entry(row):
 def chunk_by_entry():
     """Chunk the Pokédex by full Pokémon record using CSV parsing."""
     chunks = []
-    with open("pokedex.txt", "r", encoding="utf-8", newline="") as f:
+    data_path = Path(__file__).with_name("pokedex.txt")
+    with data_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row is None or not any((value or "").strip() for value in row.values()):
                 continue
+            if not (row.get("Name") or "").strip():
+                continue
             chunks.append(_format_pokemon_entry(row))
     return chunks
+
+
+def _name_from_chunk(chunk):
+    for part in chunk.split(" | "):
+        if part.startswith("Name: "):
+            return part.removeprefix("Name: ")
+    raise ValueError(f"Pokémon entry is missing its name: {chunk}")
+
+
+def build_name_matcher(chunks):
+    names = [_name_from_chunk(chunk) for chunk in chunks]
+    vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5))
+    name_embeddings = vectorizer.fit_transform(names)
+    return names, vectorizer, name_embeddings
+
+
+def correct_name_typos(query, names, vectorizer, name_embeddings):
+    known_name_parts = {
+        part.casefold()
+        for name in names
+        for part in _WORD_PATTERN.findall(name)
+    }
+    matches = list(_WORD_PATTERN.finditer(query))
+    corrected_query = query
+
+    for match in reversed(matches):
+        token = match.group()
+        if len(token) < 4 or token.casefold() in known_name_parts:
+            continue
+
+        token_embedding = vectorizer.transform([token])
+        similarities = cosine_similarity(token_embedding, name_embeddings)[0]
+        best_index = int(similarities.argmax())
+        if similarities[best_index] >= NAME_TYPO_MATCH_THRESHOLD:
+            corrected_query = (
+                corrected_query[:match.start()]
+                + names[best_index]
+                + corrected_query[match.end():]
+            )
+
+    return corrected_query
 
 
 def build_vectorizer():
