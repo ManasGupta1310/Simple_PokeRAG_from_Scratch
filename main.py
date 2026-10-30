@@ -3,9 +3,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from rag import (
         build_vectorizer,
-        embed_chunks,
-        embed_query,
-        fixed_size_chunking,
+    chunk_by_entry,
+    embed_chunks,
+    embed_query,
         retrieve_similar_chunks,
     )
 from groq import Groq
@@ -13,10 +13,11 @@ from dotenv import load_dotenv
 import os
 
 app = FastAPI()
-chunks = fixed_size_chunking()
+chunks = chunk_by_entry()
 vectorizer = build_vectorizer()
 chunk_embeddings = embed_chunks(chunks, vectorizer)
-
+load_dotenv()
+client = Groq(api_key=os.getenv("API_KEY"))
 class SearchRequest(BaseModel):
     query: str
 
@@ -42,8 +43,6 @@ def search(payload: Optional[SearchRequest] = None, query: Optional[str] = None)
         "on the documents and hence you cant help"
     )
 
-    load_dotenv()
-    client = Groq(api_key=os.getenv("API_KEY"))
     query_embedding = embed_query(user_query, vectorizer)
     top_indices, _ = retrieve_similar_chunks(query_embedding, chunk_embeddings)
     retrieved_chunks = [chunks[i] for i in top_indices]

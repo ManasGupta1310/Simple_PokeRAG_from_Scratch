@@ -14,27 +14,50 @@
 # For generation, we use a language model to produce a response based on the augmented input, combining the original query 
 # and the retrieved chunks as the context for the prompt to the language model.
 
+import csv
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-def fixed_size_chunking():
-    """Chunk the Pokédex by Pokémon entry instead of slicing raw text arbitrarily.
 
-    The source file is a CSV with one Pokémon per row, so splitting by entry preserves
-    the full record for each Pokémon and keeps retrieval context grounded in a whole
-    entity rather than cutting through it mid-entry.
-    """
-    with open("pokedex.txt", "r", encoding="utf-8") as f:
-        rows = [line.strip() for line in f if line.strip()]
+def _format_pokemon_entry(row):
+    name = (row.get("Name") or "").strip()
+    number = (row.get("Number") or "").strip()
+    type_1 = (row.get("Type 1") or "").strip()
+    type_2 = (row.get("Type 2") or "").strip()
+    stats = {
+        "HP": (row.get("HP") or "").strip(),
+        "Attack": (row.get("Attack") or "").strip(),
+        "Defense": (row.get("Defense") or "").strip(),
+        "Sp. Attack": (row.get("Sp.Attack") or "").strip(),
+        "Sp. Defense": (row.get("Sp.Defense") or "").strip(),
+        "Speed": (row.get("Speed") or "").strip(),
+    }
 
-    if not rows:
-        return []
+    parts = []
+    if number:
+        parts.append(f"Entry: {number}")
+    if name:
+        parts.append(f"Name: {name}")
+    if type_1 or type_2:
+        types = ", ".join(part for part in [type_1, type_2] if part)
+        parts.append(f"Type: {types}")
+    for key, value in stats.items():
+        if value:
+            parts.append(f"{key}: {value}")
 
-    header = rows[0]
+    return " | ".join(parts)
+
+
+def chunk_by_entry():
+    """Chunk the Pokédex by full Pokémon record using CSV parsing."""
     chunks = []
-    for row in rows[1:]:
-        chunks.append(f"{header}\n{row}")
-
+    with open("pokedex.txt", "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row is None or not any((value or "").strip() for value in row.values()):
+                continue
+            chunks.append(_format_pokemon_entry(row))
     return chunks
 
 
