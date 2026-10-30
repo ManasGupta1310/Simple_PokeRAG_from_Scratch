@@ -69,7 +69,7 @@ def chunk_by_entry():
     return chunks
 
 
-def _name_from_chunk(chunk):
+def name_from_chunk(chunk):
     for part in chunk.split(" | "):
         if part.startswith("Name: "):
             return part.removeprefix("Name: ")
@@ -77,7 +77,7 @@ def _name_from_chunk(chunk):
 
 
 def build_name_matcher(chunks):
-    names = [_name_from_chunk(chunk) for chunk in chunks]
+    names = [name_from_chunk(chunk) for chunk in chunks]
     vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5))
     name_embeddings = vectorizer.fit_transform(names)
     return names, vectorizer, name_embeddings
@@ -108,6 +108,28 @@ def correct_name_typos(query, names, vectorizer, name_embeddings):
             )
 
     return corrected_query
+
+
+def retrieve_query(
+    query,
+    vectorizer,
+    chunk_embeddings,
+    names,
+    name_vectorizer,
+    name_embeddings,
+    top_k=5,
+    correct_typos=True,
+):
+    retrieval_query = query
+    if correct_typos:
+        retrieval_query = correct_name_typos(
+            query, names, name_vectorizer, name_embeddings
+        )
+    query_embedding = embed_query(retrieval_query, vectorizer)
+    top_indices, similarities = retrieve_similar_chunks(
+        query_embedding, chunk_embeddings, top_k=top_k
+    )
+    return retrieval_query, top_indices, similarities
 
 
 def build_vectorizer():

@@ -1,24 +1,26 @@
 
 import os
+import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from groq import Groq
 from rag import (
     build_name_matcher,
     build_vectorizer,
     chunk_by_entry,
-    correct_name_typos,
     embed_chunks,
-    embed_query,
-    retrieve_similar_chunks,
+    name_from_chunk,
+    retrieve_query,
 )
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 try:
-    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.02"))
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.10"))
 except ValueError as exc:
     raise RuntimeError("SIMILARITY_THRESHOLD must be a number between 0 and 1.") from exc
 
@@ -42,7 +44,7 @@ client = Groq(api_key=api_key)
 
 # Define the request model for the search endpoint
 class SearchRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1)
 
 # Define the root endpoint for the FastAPI application
 @app.get("/")
@@ -53,6 +55,11 @@ def read_root():
 @app.post("/search")
 def search(payload: SearchRequest):
     user_query = payload.query
+    if not user_query.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="A non-empty search query is required.",
+        )
 
     # query is the question given by the user
     system_prompt = (
@@ -61,23 +68,20 @@ def search(payload: SearchRequest):
         "on the documents and hence you cant help"
     )
 
-    retrieval_query = correct_name_typos(
-        user_query, pokemon_names, name_vectorizer, name_embeddings
+    _, top_indices, similarities = retrieve_query(
+        user_query,
+        vectorizer,
+        chunk_embeddings,
+        pokemon_names,
+        name_vectorizer,
+        name_embeddings,
     )
-    query_embedding = embed_query(retrieval_query, vectorizer)
-    top_indices, similarities = retrieve_similar_chunks(query_embedding, chunk_embeddings)
     best_similarity = float(similarities[0]) if len(similarities) else 0.0
     sources = []
     for index, similarity in zip(top_indices, similarities):
-        name_field = next(
-            (part for part in chunks[index].split(" | ") if part.startswith("Name: ")),
-            None,
-        )
-        if name_field is None:
-            raise ValueError(f"Retrieved chunk is missing its Pokémon name: {chunks[index]}")
         sources.append(
             {
-                "name": name_field.removeprefix("Name: "),
+                "name": name_from_chunk(chunks[index]),
                 "similarity": float(similarity),
             }
         )
@@ -110,9 +114,10 @@ def search(payload: SearchRequest):
             stream=False,
         )
     except Exception as exc:
+        logger.exception("Groq completion failed")
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to generate a response from the configured model. Last error: {exc}",
+            detail="Failed to generate a response from the configured model.",
         ) from exc
 
     return {"answer": response.choices[0].message.content, "sources": sources}

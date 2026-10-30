@@ -41,12 +41,17 @@
       "expected_names": ["Gengar"]
     }
   ],
-  "out_of_scope": [
+  "off_topic": [
     "What is the capital of France?",
     "What is the weather today?",
+    "What is the population of Tokyo?",
+    "How do I attack a castle?",
+    "What type of coffee is best?",
+    "What is the best way to attack a problem?"
+  ],
+  "in_domain_unanswerable": [
     "Who is Pikachu's trainer?",
     "What moves does Pikachu learn?",
-    "What is the population of Tokyo?",
     "Who will win the 2026 Pokémon championship?"
   ]
 }

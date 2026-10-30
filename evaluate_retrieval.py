@@ -1,15 +1,14 @@
-import json
 import argparse
+import json
 from pathlib import Path
 
 from rag import (
     build_name_matcher,
     build_vectorizer,
     chunk_by_entry,
-    correct_name_typos,
     embed_chunks,
-    embed_query,
-    retrieve_similar_chunks,
+    name_from_chunk,
+    retrieve_query,
 )
 
 parser = argparse.ArgumentParser(description="Evaluate retrieval without calling an LLM.")
@@ -32,75 +31,83 @@ def main():
     chunk_embeddings = embed_chunks(chunks, vectorizer)
     hit_counts = {k: 0 for k in (1, 3, 5)}
     in_scope_scores = []
-    out_of_scope_scores = []
 
     for case in eval_set["in_scope"]:
         query = case["query"]
         expected_names = case["expected_names"]
-        retrieval_query = query
-        if args.correct_name_typos:
-            retrieval_query = correct_name_typos(
-                query, pokemon_names, name_vectorizer, name_embeddings
-            )
-        query_embedding = embed_query(retrieval_query, vectorizer)
-        top_indices, scores = retrieve_similar_chunks(
-            query_embedding, chunk_embeddings, top_k=max(hit_counts)
+        retrieval_query, top_indices, scores = retrieve_query(
+            query,
+            vectorizer,
+            chunk_embeddings,
+            pokemon_names,
+            name_vectorizer,
+            name_embeddings,
+            top_k=max(hit_counts),
+            correct_typos=args.correct_name_typos,
         )
         retrieved_chunks = [chunks[index] for index in top_indices]
-        top_name = next(
-            (
-                name
-                for name in expected_names
-                if retrieved_chunks and f"Name: {name}" in retrieved_chunks[0]
-            ),
-            None,
-        )
+        retrieved_names = [name_from_chunk(chunk) for chunk in retrieved_chunks]
+        top_name = retrieved_names[0] if retrieved_names else None
+        top_expected_name = top_name if top_name in expected_names else None
         in_scope_scores.append(float(scores[0]) if len(scores) else 0.0)
 
         for k in hit_counts:
-            if any(
-                f"Name: {name}" in chunk
-                for chunk in retrieved_chunks[:k]
-                for name in expected_names
-            ):
+            if any(name in expected_names for name in retrieved_names[:k]):
                 hit_counts[k] += 1
 
         print(
             f"IN  top1={float(scores[0]) if len(scores) else 0.0:.4f} "
-            f"hit@1={'yes' if top_name else 'no'} "
+            f"hit@1={'yes' if top_expected_name else 'no'} "
             f"query={query!r} "
             f"{f'retrieval_query={retrieval_query!r} ' if retrieval_query != query else ''}"
-            f"retrieved={top_name or 'no expected match'}"
+            f"retrieved={top_name or 'no named entry'}"
         )
 
-    for query in eval_set["out_of_scope"]:
-        retrieval_query = query
-        if args.correct_name_typos:
-            retrieval_query = correct_name_typos(
-                query, pokemon_names, name_vectorizer, name_embeddings
+    category_scores = {}
+    for category in ("off_topic", "in_domain_unanswerable"):
+        scores_for_category = []
+        label = "OFF" if category == "off_topic" else "IN-DOMAIN-UNANSWERABLE"
+        for query in eval_set[category]:
+            retrieval_query, _, scores = retrieve_query(
+                query,
+                vectorizer,
+                chunk_embeddings,
+                pokemon_names,
+                name_vectorizer,
+                name_embeddings,
+                top_k=1,
+                correct_typos=args.correct_name_typos,
             )
-        query_embedding = embed_query(retrieval_query, vectorizer)
-        _, scores = retrieve_similar_chunks(query_embedding, chunk_embeddings, top_k=1)
-        top_score = float(scores[0]) if len(scores) else 0.0
-        out_of_scope_scores.append(top_score)
-        print(f"OUT top1={top_score:.4f} query={query!r}")
+            top_score = float(scores[0]) if len(scores) else 0.0
+            scores_for_category.append(top_score)
+            print(
+                f"{label} top1={top_score:.4f} query={query!r} "
+                f"{f'retrieval_query={retrieval_query!r}' if retrieval_query != query else ''}"
+            )
+        category_scores[category] = scores_for_category
 
     total = len(eval_set["in_scope"])
     print("\nIn-scope retrieval:")
     for k, hits in hit_counts.items():
         print(f"  hit@{k}: {hits}/{total} ({hits / total:.1%})")
 
-    if out_of_scope_scores:
-        mean_out_score = sum(out_of_scope_scores) / len(out_of_scope_scores)
-        max_out_score = max(out_of_scope_scores)
+    off_topic_scores = category_scores["off_topic"]
+    if off_topic_scores:
+        mean_off_topic_score = sum(off_topic_scores) / len(off_topic_scores)
+        max_off_topic_score = max(off_topic_scores)
         min_in_score = min(in_scope_scores) if in_scope_scores else 0.0
-        print("\nOut-of-scope score summary:")
-        print(f"  mean top-1 score: {mean_out_score:.4f}")
-        print(f"  max top-1 score:  {max_out_score:.4f}")
+        print("\nOff-topic score summary:")
+        print(f"  mean top-1 score: {mean_off_topic_score:.4f}")
+        print(f"  max top-1 score:  {max_off_topic_score:.4f}")
         print(
-            "  conservative score gap (min in-scope top-1 - max out-of-scope top-1): "
-            f"{min_in_score - max_out_score:.4f}"
+            "  conservative score gap (min in-scope top-1 - max off-topic top-1): "
+            f"{min_in_score - max_off_topic_score:.4f}"
         )
+    in_domain_scores = category_scores["in_domain_unanswerable"]
+    if in_domain_scores:
+        print("\nIn-domain unanswerable score summary:")
+        print(f"  mean top-1 score: {sum(in_domain_scores) / len(in_domain_scores):.4f}")
+        print(f"  max top-1 score:  {max(in_domain_scores):.4f}")
 
 
 if __name__ == "__main__":
