@@ -10,11 +10,13 @@ question ──► TF-IDF vectorize ──► cosine similarity vs. chunks ─�
                      answer ◄── Groq LLM ◄── prompt (question + context)
 ```
 
-1. **Chunking**: `pokedex.txt` is split into fixed-size chunks (1000 chars, 50% overlap).
+1. **Chunking**: each Pokémon CSV record in `pokedex.txt` is parsed as one entry and rendered as readable text.
 2. **Embedding**: chunks and queries are vectorized with scikit-learn's `TfidfVectorizer` (English stop words, unigrams + bigrams).
-3. **Retrieval**: cosine similarity between the query vector and every chunk; top 5 returned.
+3. **Retrieval**: cosine similarity between the query vector and every entry; top 5 are returned. If the best score is below `SIMILARITY_THRESHOLD`, the request is declined without calling the language model.
 4. **Augmentation**: retrieved chunks are injected into the prompt as context.
 5. **Generation**: a Groq-hosted LLM answers using only that context.
+
+`SIMILARITY_THRESHOLD` is an optional value from `0` to `1` in `.env`; it defaults to `0.02`. The score is TF-IDF cosine similarity, not a probability, so tune the threshold against representative in-scope and out-of-scope questions. Queries with no matching terms are declined even if the configured threshold is `0`.
 
 ## Project structure
 
@@ -38,7 +40,8 @@ Create a `.env` file:
 
 ```
 API_KEY=your_groq_api_key
-GROQ_MODEL=openai/gpt-oss-120b   # optional
+MODEL=openai/gpt-oss-120b        # optional
+SIMILARITY_THRESHOLD=0.02        # optional; TF-IDF cosine score cutoff
 ```
 
 ## Run
@@ -60,9 +63,7 @@ Interactive docs: http://127.0.0.1:8000/docs
 ## Limitations / next steps
 
 - [ ] Build the index once at startup instead of per request
-- [ ] Chunk by Pokédex entry instead of fixed size
 - [ ] Replace TF-IDF with dense embeddings (e.g. `sentence-transformers`)
-- [ ] Similarity threshold for out-of-scope questions
 - [ ] Source metadata for citations
 - [ ] Small eval set to measure retrieval quality
 
